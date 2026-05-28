@@ -8,6 +8,7 @@ import { motion } from 'framer-motion';
 export default function Evaluator() {
   const navigate = useNavigate();
   const [studentName, setStudentName] = useState('');
+  const [turma, setTurma] = useState('');
   const [imageFile, setImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
   const [isEvaluating, setIsEvaluating] = useState(false);
@@ -15,12 +16,16 @@ export default function Evaluator() {
   const [error, setError] = useState('');
   const fileInputRef = useRef(null);
 
-  // Load API Key to check if it's set
+  // Load API Key and Last Turma
   useEffect(() => {
     const checkApiKey = async () => {
       const key = await db.settings.get('gemini_api_key');
       if (!key || !key.value) {
         setError("Chave da API do Gemini não configurada. Vá em Configurações.");
+      }
+      const lastTurma = await db.settings.get('last_turma');
+      if (lastTurma && lastTurma.value) {
+        setTurma(lastTurma.value);
       }
     };
     checkApiKey();
@@ -36,8 +41,8 @@ export default function Evaluator() {
   };
 
   const handleEvaluate = async () => {
-    if (!studentName.trim()) {
-      setError("Por favor, insira o nome do aluno.");
+    if (!studentName.trim() || !turma.trim()) {
+      setError("Por favor, insira o nome do aluno e a turma.");
       return;
     }
     if (!imageFile) {
@@ -68,8 +73,12 @@ export default function Evaluator() {
   const handleSave = async () => {
     if (!result) return;
     
+    // Save the last used class to make it easier for the next exam
+    await db.settings.put({ key: 'last_turma', value: turma });
+
     await db.exams.add({
       studentName,
+      turma: turma.trim().toUpperCase(),
       date: new Date().toISOString(),
       grade: result.nota,
       transcricao: result.transcricao,
@@ -95,17 +104,31 @@ export default function Evaluator() {
 
       {!result ? (
         <div className="glass-card p-6 space-y-6">
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1">
-              Nome do Aluno
-            </label>
-            <input
-              type="text"
-              value={studentName}
-              onChange={(e) => setStudentName(e.target.value)}
-              placeholder="Ex: João Silva"
-              className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-colors"
-            />
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="sm:col-span-2">
+              <label className="block text-sm font-medium text-slate-300 mb-1">
+                Nome do Aluno
+              </label>
+              <input
+                type="text"
+                value={studentName}
+                onChange={(e) => setStudentName(e.target.value)}
+                placeholder="Ex: Albert Ribeiro"
+                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-colors"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-1">
+                Turma
+              </label>
+              <input
+                type="text"
+                value={turma}
+                onChange={(e) => setTurma(e.target.value.toUpperCase())}
+                placeholder="Ex: 6ºM1"
+                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-colors"
+              />
+            </div>
           </div>
 
           <div className="space-y-3">
@@ -158,7 +181,7 @@ export default function Evaluator() {
 
           <button
             onClick={handleEvaluate}
-            disabled={isEvaluating || !studentName || !imageFile}
+            disabled={isEvaluating || !studentName || !turma || !imageFile}
             className="w-full bg-brand-600 hover:bg-brand-500 disabled:bg-slate-700 disabled:text-slate-400 text-white font-semibold py-4 px-6 rounded-xl transition-colors flex items-center justify-center gap-2 shadow-lg"
           >
             {isEvaluating ? (
@@ -180,7 +203,7 @@ export default function Evaluator() {
         >
           <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-6 pb-6 border-b border-slate-700/50">
             <div>
-              <h3 className="text-2xl font-bold text-slate-100">{studentName}</h3>
+              <h3 className="text-2xl font-bold text-slate-100">{studentName} <span className="text-sm font-normal text-brand-400 bg-brand-500/10 px-2 py-1 rounded ml-2">{turma}</span></h3>
               <p className="text-brand-400 font-medium">Avaliação Concluída</p>
             </div>
             <div className="text-center bg-slate-900/50 p-4 rounded-2xl border border-slate-700">

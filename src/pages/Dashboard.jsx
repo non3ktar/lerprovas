@@ -1,10 +1,23 @@
+import { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
 import { Link } from 'react-router-dom';
-import { PlusCircle, FileText, Trash2, Award, Download } from 'lucide-react';
+import { PlusCircle, FileText, Trash2, Award, Download, Filter } from 'lucide-react';
 
 export default function Dashboard() {
-  const exams = useLiveQuery(() => db.exams.orderBy('date').reverse().toArray());
+  const [selectedTurma, setSelectedTurma] = useState('Todas');
+  
+  const allExams = useLiveQuery(() => db.exams.orderBy('date').reverse().toArray());
+  
+  // Extrair lista de turmas únicas para o filtro
+  const turmasDisponiveis = allExams 
+    ? [...new Set(allExams.map(e => e.turma).filter(Boolean))]
+    : [];
+
+  // Filtrar os exames a serem exibidos na tela
+  const exams = allExams?.filter(exam => 
+    selectedTurma === 'Todas' ? true : exam.turma === selectedTurma
+  );
 
   const handleDelete = async (id) => {
     if (window.confirm("Deseja realmente apagar esta avaliação?")) {
@@ -15,36 +28,30 @@ export default function Dashboard() {
   const exportToCSV = () => {
     if (!exams || exams.length === 0) return;
 
-    // Headers baseados no "Modelo CSV" padrão de sistemas escolares
-    // Seguindo a estrutura da imagem (Unidade 1 -> N1, N2, N3, N4)
-    // Deixamos a N1 (1ª Avaliação) vazia para o sistema ignorar e não sobrescrever a nota já existente.
     const headers = ['Nome do Aluno', 'N1', 'N2', 'N3', 'N4', 'Feedback da IA'];
     
-    // Convertendo dados para linhas do CSV
     const csvRows = exams.map(exam => {
-      // Distribui a nota total (ex: 4.0) dividindo na metade para N2 e N3.
-      // Ex: se tirou 4.0, a N2 ganha 2.0 e N3 ganha 2.0.
       const notaDistribuida = (exam.grade / 2).toFixed(1).replace('.', ',');
-      
       return [
         `"${exam.studentName}"`,
-        `""`, // N1 em branco (já preenchida no sistema)
-        `"${notaDistribuida}"`, // N2 (2ª avaliação)
-        `"${notaDistribuida}"`, // N3 (3ª avaliação)
-        `""`, // N4 (vazio)
+        `""`, 
+        `"${notaDistribuida}"`, 
+        `"${notaDistribuida}"`, 
+        `""`, 
         `"${exam.feedback.replace(/"/g, '""')}"`
-      ].join(';'); // Ponto-e-vírgula é padrão em Excel/Sistemas em PT-BR
+      ].join(';');
     });
 
-    // Juntando tudo
     const csvContent = [headers.join(';'), ...csvRows].join('\n');
     
-    // Criando o arquivo para download
     const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `importacao_notas_lpt.csv`);
+    
+    const prefixo = selectedTurma !== 'Todas' ? selectedTurma.replace(/[^a-zA-Z0-9]/g, '') : 'todas_turmas';
+    link.setAttribute('download', `importacao_notas_lpt_${prefixo}.csv`);
+    
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -52,11 +59,28 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <h2 className="text-3xl font-bold text-slate-100 flex items-center gap-2">
           <Award className="text-brand-500" /> Suas Avaliações
         </h2>
-        <div className="flex gap-2">
+        
+        <div className="flex items-center gap-3">
+          {turmasDisponiveis.length > 0 && (
+            <div className="flex items-center gap-2 bg-slate-800 rounded-xl px-3 border border-slate-700">
+              <Filter size={18} className="text-slate-400" />
+              <select 
+                value={selectedTurma}
+                onChange={(e) => setSelectedTurma(e.target.value)}
+                className="bg-transparent text-slate-100 py-3 outline-none"
+              >
+                <option value="Todas">Todas as Turmas</option>
+                {turmasDisponiveis.map(t => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
           {exams && exams.length > 0 && (
             <button
               onClick={exportToCSV}
@@ -64,12 +88,13 @@ export default function Dashboard() {
               title="Exportar para Excel (CSV)"
             >
               <Download size={24} />
-              <span className="hidden sm:inline font-semibold">Exportar CSV</span>
+              <span className="hidden sm:inline font-semibold">CSV</span>
             </button>
           )}
+          
           <Link
             to="/evaluate"
-            className="bg-brand-600 hover:bg-brand-500 text-white p-3 rounded-xl transition-colors flex items-center gap-2 shadow-lg shadow-brand-500/20"
+            className="bg-brand-600 hover:bg-brand-500 text-white p-3 rounded-xl transition-colors flex items-center gap-2 shadow-lg shadow-brand-500/20 whitespace-nowrap"
           >
             <PlusCircle size={24} />
             <span className="hidden sm:inline font-semibold">Nova Avaliação</span>
@@ -78,16 +103,16 @@ export default function Dashboard() {
       </div>
 
       <div className="grid gap-4">
-        {!exams && (
+        {!allExams && (
           <div className="text-center py-12 text-slate-500 animate-pulse">
             Carregando avaliações...
           </div>
         )}
         
-        {exams && exams.length === 0 && (
+        {allExams && exams.length === 0 && (
           <div className="glass-card p-12 text-center text-slate-400 flex flex-col items-center gap-4">
             <FileText size={48} className="text-slate-600" />
-            <p>Nenhuma prova avaliada ainda.</p>
+            <p>{selectedTurma !== 'Todas' ? `Nenhuma prova avaliada para a turma ${selectedTurma}.` : 'Nenhuma prova avaliada ainda.'}</p>
             <Link to="/evaluate" className="text-brand-400 hover:text-brand-300 font-medium">
               Comece agora tirando a primeira foto!
             </Link>
@@ -97,7 +122,10 @@ export default function Dashboard() {
         {exams && exams.map((exam) => (
           <div key={exam.id} className="glass-card p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-l-4 border-l-brand-500">
             <div>
-              <h3 className="text-xl font-bold text-slate-100">{exam.studentName}</h3>
+              <h3 className="text-xl font-bold text-slate-100 flex items-center gap-2">
+                {exam.studentName}
+                {exam.turma && <span className="text-xs font-normal text-brand-400 bg-brand-500/10 px-2 py-1 rounded">{exam.turma}</span>}
+              </h3>
               <p className="text-sm text-slate-400 mt-1">
                 Data: {new Date(exam.date).toLocaleString('pt-BR')}
               </p>
